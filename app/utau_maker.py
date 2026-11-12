@@ -20,7 +20,12 @@ PRESETS = {
     "Deep adult man": "低く落ち着いた大人の男性の声。ゆっくり、はっきりと話す。",
 }
 SET_NAMES = list(core.SETS.keys())
-ALL_KANA = [k for row in core.rows_for(SET_NAMES[-1], True) for k, _ in row]
+ALL_KANA = []
+for _set in SET_NAMES:
+    for _row in core.rows_for(_set, True):
+        for _k, _ in _row:
+            if _k not in ALL_KANA:
+                ALL_KANA.append(_k)
 
 
 def on_preset(label):
@@ -57,6 +62,10 @@ def _pitch_mode(tries):
         if n == int(tries or 0):
             return label
     return pipeline.PITCH_MODES[1]
+
+
+def on_rename(folder):
+    return core.rename_to_hiragana((folder or "").strip().strip('"'))
 
 
 def on_reoto(folder, short):
@@ -180,7 +189,7 @@ with gr.Blocks(title="Irodori UTAU Maker") as demo:
     with gr.Row():
         name = gr.Textbox(label="Voicebank name (English letters are safest)", value="MyIrodoriVoice")
         set_name = gr.Dropdown(SET_NAMES, value=SET_NAMES[0],
-                               label="Sound set and voicebank type (CV or CVVC)")
+                               label="Sound set and voicebank type (CV, CVVC or VCV)")
     breaths = gr.Checkbox(value=False,
                           label="Add 4 breath sounds (lyrics in OpenUtau: br1, br2, br3, br4)")
     gr.Markdown("**Speaking style of the sounds.** Use a calm style if some sounds are shouted. "
@@ -214,7 +223,8 @@ with gr.Blocks(title="Irodori UTAU Maker") as demo:
 
     gr.Markdown("## Step 3. Check and repair sounds (optional)")
     with gr.Row():
-        kana = gr.Dropdown(ALL_KANA, label="Sound (kana, transition such as \"a k\", or breath)")
+        kana = gr.Dropdown(ALL_KANA, label="Sound (kana, transition such as \"a k\" or \"a か\", or breath)",
+                           allow_custom_value=False)
         regen_btn = gr.Button("Make this sound again")
         flagged_btn = gr.Button("Make the flagged sounds again")
     preview = gr.Audio(type="filepath", label="Listen", interactive=False)
@@ -231,6 +241,15 @@ with gr.Blocks(title="Irodori UTAU Maker") as demo:
         oto_btn = gr.Button("Write a new oto.ini")
     oto_msg = gr.Textbox(label="Result", lines=5)
 
+    gr.Markdown("## Step 5. Change WAV file names to hiragana (optional)\n"
+                "This step renames the romaji files of a voicebank folder, for example "
+                "ka.wav to か.wav. It also updates oto.ini and keeps a backup of it.")
+    with gr.Row():
+        rename_folder = gr.Textbox(label="Folder path",
+                                   placeholder="C:\\IrodoriUtauMaker\\voicebanks\\MyIrodoriVoice")
+        rename_btn = gr.Button("Change the names to hiragana")
+    rename_msg = gr.Textbox(label="Result", lines=4)
+
     with gr.Accordion("Advanced (leave empty unless a guide tells you)", open=False):
         extra = gr.Textbox(label="Extra infer.py options",
                            placeholder="Example for low video memory: --model-precision bf16")
@@ -239,6 +258,7 @@ with gr.Blocks(title="Irodori UTAU Maker") as demo:
     voice_btn.click(on_make_voice, [caption, extra], [ref, voice_msg])
     style_pick.change(on_style, style_pick, style)
     oto_btn.click(on_reoto, [oto_folder, oto_short], oto_msg)
+    rename_btn.click(on_rename, rename_folder, rename_msg)
     build_btn.click(on_build, [name, ref, set_name, skip_done, extra, style, mode, breaths,
                                pitch_mode, target_hz, short],
                     [status, log, zip_file])

@@ -1,6 +1,6 @@
 IRODORI UTAU MAKER
 ==================
-This tool makes a Japanese CV or CVVC voicebank for OpenUtau from Irodori-TTS-v4.1-Small.
+This tool makes a Japanese CV, CVVC or VCV voicebank for OpenUtau from Irodori-TTS-v4.1-Small.
 You do not type commands. You do not make WAV files by hand.
 
 WARNINGS (read these first)
@@ -28,8 +28,12 @@ VOICEBANK TYPES (the "Sound set and voicebank type" list)
 - CVVC: the CV sounds plus 162 vowel-consonant transitions (aliases such as "a k").
   Notes connect more smoothly. The build takes about 2.5 times longer.
   Use the JA CVVC phonemizer.
-- You can change a finished CV voicebank to CVVC. Keep the same name, select a CVVC set,
+- VCV: the CV sounds plus each kana after each vowel (aliases such as "a か").
+  This type gives the smoothest connection between notes. The build is the longest:
+  707 sounds for Basic, which is about 5 times the CV build. Use the JA VCV phonemizer.
+- You can change a finished CV voicebank to CVVC or VCV. Keep the same name, select a CVVC set,
   and click "Build voicebank". The tool keeps the CV sounds and adds the transitions.
+- "Short consonants" changes the CV sounds only. It does not change VCV transitions.
 
 BREATHS
 - Select "Add 4 breath sounds" before you build.
@@ -56,6 +60,14 @@ AUTO-OTO (step 4)
 - Step 4 writes a new oto.ini for any folder of CV WAV files (ka.wav or hiragana names).
   The old oto.ini stays as oto_backup_1.ini.
 
+HIRAGANA FILE NAMES (step 5)
+- The tool writes romaji file names (ka.wav). These names are safe on every PC.
+- Step 5 changes the names of a voicebank folder to hiragana (か.wav, "a か.wav").
+  It also updates oto.ini and keeps the old file as a backup.
+- Do this step last. A new build writes romaji names again.
+- A zip file with hiragana names needs the correct archive encoding during installation.
+  Copy the folder into the OpenUtau "Singers" folder to avoid this problem.
+
 AFTER A CRASH
 - Double-click 2_Start.bat. The page loads the last voicebank.
 - Click "Build voicebank". The tool continues from the saved sounds.
@@ -64,7 +76,7 @@ USE THE VOICEBANK IN OPENUTAU
 1. Drag the finished .zip file onto the OpenUtau window.
 2. In the install window, keep the encoding Shift-JIS. Click Next until it finishes.
 3. Select the singer on a track.
-4. Select the phonemizer: DEFAULT for CV, JA CVVC for CVVC.
+4. Select the phonemizer: DEFAULT for CV, JA CVVC for CVVC, JA VCV for VCV.
 5. Type hiragana lyrics (か). A CV voicebank also accepts romaji lyrics (ka).
 
 HOW IT WORKS

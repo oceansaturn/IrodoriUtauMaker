@@ -1,6 +1,6 @@
 # Irodori UTAU Maker
 
-Irodori UTAU Maker makes a Japanese CV or CVVC voicebank for OpenUtau from
+Irodori UTAU Maker makes a Japanese CV, CVVC or VCV voicebank for OpenUtau from
 [Irodori-TTS-v4.1-Small](https://huggingface.co/Aratako/Irodori-TTS-v4.1-Small).
 You do not type commands, and you do not make WAV files by hand.
 
@@ -23,13 +23,14 @@ You do not type commands, and you do not make WAV files by hand.
 ## Features
 
 - Voice from a description, or from a WAV of your own voice
-- CV and CVVC sound sets, with optional breath sounds
+- CV, CVVC and VCV sound sets, with optional breath sounds
 - Automatic oto.ini
 - Pitch matching: keeps the take of each sound that is nearest to the voice pitch
 - Short consonants for fast songs
 - Speaking-style control
 - A stopped or crashed build continues from the saved sounds
 - Auto-oto for any folder of CV WAV files
+- Bulk change of WAV file names from romaji to hiragana, with oto.ini update
 
 `README.txt` contains the full instructions.
 

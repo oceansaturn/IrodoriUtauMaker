@@ -72,6 +72,23 @@ VC_VOWELS = [("a", "ア"), ("i", "イ"), ("u", "ウ"), ("e", "エ"), ("o", "オ"
 VC_ROWS = [[(f"{v} {c}", f"vc_{v}_{c}") for v, _ in VC_VOWELS] for c, _ in VC_CONSONANTS]
 VC_TEXT = {f"vc_{v}_{c}": vk + ck for c, ck in VC_CONSONANTS for v, vk in VC_VOWELS}
 
+# ---- VCV: each kana after each vowel. Entry: ("a か", "vcv_a_ka"). ----
+def _katakana(text):
+    return "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in text)
+
+
+def _vcv_rows(cv_rows):
+    return [[(f"{v} {kana}", f"vcv_{v}_{romaji}") for v, _ in VC_VOWELS]
+            for row in cv_rows for kana, romaji in row]
+
+
+# Text for Irodori-TTS. Katakana stops the particle readings of は and へ.
+# The long mark makes the second vowel long. Example: "アカー".
+VCV_TEXT = {f"vcv_{v}_{romaji}": vk + _katakana(kana) + "ー"
+            for row in BASIC_ROWS + EXTRA_ROWS for kana, romaji in row for v, vk in VC_VOWELS}
+VCV_CV = {f"vcv_{v}_{romaji}": romaji
+          for row in BASIC_ROWS + EXTRA_ROWS for _, romaji in row for v, _ in VC_VOWELS}
+
 # ---- Breaths. Entry: (alias, file name). The text is what Irodori-TTS speaks. ----
 BREATH_ROWS = [[("br1", "br1")], [("br2", "br2")], [("br3", "br3")], [("br4", "br4")]]
 BREATH_TEXT = {"br1": "はぁ…", "br2": "すぅ…", "br3": "ふぅ…", "br4": "はっ…"}
@@ -84,6 +101,10 @@ SETS = {
     "CVVC - Basic Japanese (CV sounds + 162 vowel-consonant transitions)": BASIC_ROWS + VC_ROWS,
     "CVVC - Extended (CV Extended + 162 vowel-consonant transitions)":
         BASIC_ROWS + EXTRA_ROWS + VC_ROWS,
+    "VCV - Basic Japanese (CV sounds + 606 vowel-to-kana transitions, long build)":
+        BASIC_ROWS + _vcv_rows(BASIC_ROWS),
+    "VCV - Extended (CV Extended + 714 vowel-to-kana transitions, long build)":
+        BASIC_ROWS + EXTRA_ROWS + _vcv_rows(BASIC_ROWS + EXTRA_ROWS),
 }
 # Names from older versions of the tool.
 OLD_SET_NAMES = {
@@ -101,8 +122,14 @@ def set_name_fix(set_name):
     return names[OLD_SET_NAMES.get(set_name, 0)]
 
 
-def is_cvvc(set_name):
-    return set_name_fix(set_name).startswith("CVVC")
+def bank_type(set_name):
+    """Return "CV", "CVVC" or "VCV"."""
+    name = set_name_fix(set_name)
+    return "CVVC" if name.startswith("CVVC") else "VCV" if name.startswith("VCV") else "CV"
+
+
+PHONEMIZER = {"CV": "default phonemizer", "CVVC": "JA CVVC phonemizer",
+              "VCV": "JA VCV phonemizer"}
 
 
 def rows_for(set_name, breaths=False):
@@ -111,6 +138,8 @@ def rows_for(set_name, breaths=False):
 
 
 def kind(file_name):
+    if file_name.startswith("vcv_"):
+        return "vcv"
     if file_name.startswith("vc_"):
         return "vc"
     if file_name.startswith("br"):
@@ -339,6 +368,77 @@ def analyze_vc(x: np.ndarray) -> dict:
             "steady_rms": v1_level, "pitch": _region_pitch(x, hop, a0, max(a0 + 4, c_start))}
 
 
+def analyze_vcv(x: np.ndarray, file_name: str) -> dict:
+    """Measure a vowel + kana sound, for example "a か". Return oto numbers.
+
+    The sound has three parts: first vowel, consonant, second vowel.
+    The tool finds the end of the first vowel. It then measures the rest as a CV sound.
+    """
+    romaji = VCV_CV[file_name]
+    cls = sound_class(romaji)
+    hop = OUT_SR // 200
+    win = hop * 5
+    ms = 5.0
+    rms = frame_rms(x, hop, win)
+    above = np.where(rms > max(float(rms.max()) * 0.03, 1e-4))[0]
+    if len(above) < 40:
+        return {"ok": False, "reason": "too short or silent"}
+    onset, last = int(above[0]), int(above[-1])
+    span = last - onset
+    notes = []
+    c_start = None
+    if cls in ("plosive", "fricative"):
+        # Unvoiced consonant: the first vowel stops where the voice stops.
+        f0 = pitch_track(x, hop)
+        i = onset
+        while i < min(onset + 14, len(f0)) and f0[i] <= 0:
+            i += 1
+        j = i
+        while j < len(f0) and (f0[j] > 0 or (j + 1 < len(f0) and f0[j + 1] > 0)):
+            j += 1
+        if j - onset >= 8 and j < onset + span * 0.6:
+            c_start = j
+    if c_start is None:
+        spec = _band_spectra(x, hop, win)
+        spec = spec - spec.mean(axis=1, keepdims=True)
+        n = min(len(rms), len(spec))
+        a0 = onset + 3
+        if c_start is None and a0 + 8 < n:
+            ref = spec[a0:a0 + 8].mean(axis=0)
+            level = float(np.median(rms[a0:a0 + 8]))
+            dist = np.abs(spec[:n] - ref).mean(axis=1)
+            limit = max(1.6 * float(np.percentile(dist[a0:a0 + 8], 90)), 4.0)
+            run = 0
+            for i in range(a0 + 8, min(n, onset + int(span * 0.6))):
+                run = run + 1 if (dist[i] > limit or rms[i] < 0.4 * level) else 0
+                if run >= 3:
+                    c_start = i - 2
+                    break
+    if c_start is None or c_start - onset < 8:
+        notes.append("transition estimated")
+        c_start = onset + min(int(span * 0.3), 30)
+    # Measure the consonant and the second vowel as a CV sound.
+    cut = c_start * hop
+    tail = analyze(x[cut:], romaji)
+    if "offset" not in tail:
+        return {"ok": False, "reason": tail.get("reason", "second vowel not found")}
+    c_ms = c_start * ms
+    v2_ms = c_ms + (30.0 if cls == "vowel" else tail["v_ms"])
+    offset_ms = max(onset * ms + 10.0, c_ms - 100.0)
+    pre = v2_ms - offset_ms
+    end_ms = c_ms + tail["offset"] - tail["cutoff"]
+    fixed = pre + max(tail["consonant"] - tail["preutterance"], 30.0)
+    length = end_ms - offset_ms
+    if tail["reason"]:
+        notes.append(tail["reason"])
+    return {"ok": tail["ok"] and length - fixed >= 80.0,
+            "reason": ", ".join(notes) if length - fixed >= 80.0 else "vowel too short",
+            "offset": round(offset_ms, 1), "consonant": round(fixed, 1),
+            "cutoff": round(-length, 1), "preutterance": round(pre, 1),
+            "overlap": round(max(min(c_ms - offset_ms, 100.0) * 0.8, 10.0), 1),
+            "steady_rms": tail["steady_rms"], "pitch": tail["pitch"]}
+
+
 def pitch_track(x: np.ndarray, hop: int) -> np.ndarray:
     """Return the pitch (Hz) of each 5 ms frame. 0 = no clear pitch."""
     step = 4                                  # work at 11025 Hz: faster
@@ -423,6 +523,8 @@ def shorten_consonant(x: np.ndarray, romaji: str, res: dict) -> np.ndarray:
 
 def analyze(x: np.ndarray, romaji: str, short: bool = False) -> dict:
     """Measure one sound. Return the oto.ini numbers in ms and a quality flag."""
+    if kind(romaji) == "vcv":
+        return analyze_vcv(x, romaji)
     if kind(romaji) == "vc":
         return analyze_vc(x)
     if kind(romaji) == "breath":
@@ -567,7 +669,7 @@ def normalize(x: np.ndarray, steady_rms: float, target: float = 0.12):
 
 
 # -------------------------------------------------------------- bank assembly
-def build_bank(seg_dir: str, out_dir: str, name: str, rows, cvvc: bool = False,
+def build_bank(seg_dir: str, out_dir: str, name: str, rows, btype: str = "CV",
                target: float = 0.0, short: bool = False) -> dict:
     """Make the OpenUtau voicebank folder and zip from the cut sounds."""
     os.makedirs(out_dir, exist_ok=True)
@@ -598,11 +700,11 @@ def build_bank(seg_dir: str, out_dir: str, name: str, rows, cvvc: bool = False,
             info[romaji] = res
             (report["good"] if res["ok"] and not res["reason"] else report["check"]).append(
                 kana if not res["reason"] else f"{kana} ({res['reason']})")
-            if what == "vc":
-                aliases = [kana]                       # example: "a k"
+            if what in ("vc", "vcv"):
+                aliases = [kana]                       # examples: "a k", "a か"
             elif what == "breath":
                 aliases = [kana] + (["br", "息"] if romaji == "br1" else [])
-            elif cvvc:
+            elif btype != "CV":
                 aliases = [kana, romaji, "- " + kana]  # "- か" = start of a phrase
             else:
                 aliases = [kana, romaji]
@@ -630,9 +732,7 @@ def build_bank(seg_dir: str, out_dir: str, name: str, rows, cvvc: bool = False,
               errors="replace", newline="\r\n") as f:
         f.write(f"name={name}\n")
     with open(os.path.join(out_dir, "readme.txt"), "w", encoding="utf-8", newline="\r\n") as f:
-        kind_text = ("Japanese CVVC voicebank. In OpenUtau, select the JA CVVC phonemizer."
-                     if cvvc else
-                     "Japanese CV voicebank. In OpenUtau, use the default phonemizer.")
+        kind_text = (f"Japanese {btype} voicebank. In OpenUtau, use the {PHONEMIZER[btype]}.")
         f.write(f"{name}\n{kind_text}\n"
                 "Breath sounds, if present, have the aliases br1, br2, br3, br4.\n"
                 "The audio is synthetic speech from Irodori-TTS-v4.1-Small.\n"
@@ -722,4 +822,64 @@ def reoto_folder(folder: str, short: bool = False) -> str:
         msg.append("Check these sounds: " + ", ".join(check))
     if skipped:
         msg.append("Skipped files: " + ", ".join(skipped))
+    return "\n".join(msg)
+
+
+# ------------------------------------------------ file names to hiragana
+def hiragana_name(stem: str):
+    """Return the hiragana name for a file name of this tool, or None."""
+    table = {r: k for row in BASIC_ROWS + EXTRA_ROWS for k, r in row}
+    if stem in table:
+        return table[stem]
+    if stem.startswith("vcv_"):                       # vcv_a_ka -> "a か"
+        v, _, romaji = stem[4:].partition("_")
+        return f"{v} {table[romaji]}" if romaji in table else None
+    if stem.startswith("vc_"):                        # vc_a_k -> "a k"
+        v, _, c = stem[3:].partition("_")
+        return f"{v} {c}" if c else None
+    return None
+
+
+def rename_to_hiragana(folder: str) -> str:
+    """Rename romaji WAV files to hiragana names and update oto.ini. Return a report."""
+    if not os.path.isdir(folder):
+        return "ERROR. This folder does not exist: " + folder
+    changes, skipped = {}, []
+    for fn in sorted(os.listdir(folder)):
+        if not fn.lower().endswith(".wav"):
+            continue
+        new = hiragana_name(fn[:-4])
+        if new is None:
+            skipped.append(fn)
+        elif os.path.exists(os.path.join(folder, new + ".wav")):
+            skipped.append(fn + " (the hiragana name exists)")
+        else:
+            changes[fn] = new + ".wav"
+    if not changes:
+        return ("No file names changed. The names must be romaji names of this tool "
+                "(ka.wav, shi.wav, vcv_a_ka.wav).")
+    oto = os.path.join(folder, "oto.ini")
+    oto_note = "No oto.ini in this folder."
+    if os.path.exists(oto):
+        raw = open(oto, "rb").read()
+        try:
+            text, enc = raw.decode("shift_jis"), "shift_jis"
+        except UnicodeDecodeError:
+            text, enc = raw.decode("utf-8", "replace"), "utf-8"
+        lines = []
+        for line in text.splitlines():
+            fn, eq, rest = line.partition("=")
+            lines.append(changes.get(fn, fn) + eq + rest)
+        n = 1
+        while os.path.exists(os.path.join(folder, f"oto_backup_{n}.ini")):
+            n += 1
+        os.replace(oto, os.path.join(folder, f"oto_backup_{n}.ini"))
+        with open(oto, "w", encoding=enc, errors="replace", newline="\r\n") as f:
+            f.write("\n".join(lines) + "\n")
+        oto_note = f"oto.ini uses the new names. The old file is oto_backup_{n}.ini."
+    for old, new in changes.items():
+        os.replace(os.path.join(folder, old), os.path.join(folder, new))
+    msg = [f"DONE. {len(changes)} WAV files have hiragana names now.", oto_note]
+    if skipped:
+        msg.append("Not changed: " + ", ".join(skipped[:40]))
     return "\n".join(msg)

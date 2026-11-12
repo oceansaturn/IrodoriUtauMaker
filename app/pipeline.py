@@ -116,6 +116,8 @@ _VOWELS = {"a": "あ", "i": "い", "u": "う", "e": "え", "o": "お"}
 
 def _spell(kana, romaji, long_vowel, mode):
     """Return the text that Irodori-TTS speaks for one sound."""
+    if romaji in core.VCV_TEXT:
+        return core.VCV_TEXT[romaji]
     if romaji in core.VC_TEXT:
         return core.VC_TEXT[romaji]
     if romaji in core.BREATH_TEXT:
@@ -326,24 +328,30 @@ def _rows(name, set_name):
 
 def finalize(name, set_name):
     name = safe_name(name)
-    cvvc = core.is_cvvc(set_name)
+    btype = core.bank_type(set_name)
     rep = core.build_bank(os.path.join(WORK, name, "sounds"),
-                          os.path.join(BANKS, name), name, _rows(name, set_name), cvvc,
+                          os.path.join(BANKS, name), name, _rows(name, set_name), btype,
                           float((project_info(name) or {}).get("target") or 0),
                           bool((project_info(name) or {}).get("short", True)))
-    msg = [f"DONE. The {'CVVC' if cvvc else 'CV'} voicebank has {rep['count']} sounds.",
+    msg = [f"DONE. The {btype} voicebank has {rep['count']} sounds.",
            f"Zip file: {rep['zip']}",
-           "In OpenUtau, select the " + ("JA CVVC phonemizer." if cvvc else "default phonemizer.")]
+           f"In OpenUtau, select the {core.PHONEMIZER[btype]}."]
     with open(os.path.join(WORK, name, "flagged.json"), "w", encoding="utf-8") as f:
         json.dump(rep["flagged"], f, ensure_ascii=False)
     if rep["flagged"]:
         msg.append(f"PITCH: {rep.get('in_range')} of {rep.get('with_pitch')} sounds are within "
                    f"25 % of {rep.get('typical_pitch')} Hz. Typical pitch of this voicebank: "
                    f"{rep.get('median_pitch')} Hz.")
-        msg.append("Sounds with a different pitch (possibly shouted): " + " ".join(rep["flagged"]))
+        shown = rep["flagged"][:60]
+        more = len(rep["flagged"]) - len(shown)
+        msg.append(f"Sounds with a different pitch (possibly shouted), {len(rep['flagged'])} in all: "
+                   + ", ".join(shown) + (f", and {more} more." if more else "."))
         msg.append('Click "Make the flagged sounds again" in step 3 to replace them.')
     if rep["check"]:
-        msg.append("Listen to these sounds in step 3: " + ", ".join(rep["check"]))
+        shown = rep["check"][:40]
+        more = len(rep["check"]) - len(shown)
+        msg.append("Listen to these sounds in step 3: " + ", ".join(shown)
+                   + (f", and {more} more." if more else "."))
     if rep["missing"]:
         msg.append("Missing sounds: " + " ".join(rep["missing"]))
     return "\n".join(msg)
