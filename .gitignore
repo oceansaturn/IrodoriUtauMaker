@@ -1,0 +1,6 @@
+# Downloaded or generated on each PC. Do not upload.
+Irodori-TTS/
+work/
+voicebanks/
+__pycache__/
+*.pyc
