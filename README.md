@@ -44,3 +44,15 @@ You do not type commands, and you do not make WAV files by hand.
 | `app/core.py` | Sound cutting, oto.ini, pitch measurement |
 
 The installer downloads Irodori-TTS and the model. They are not part of this repository.
+
+## License
+
+This project uses the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
+
+- You can use, change and share this tool for noncommercial purposes.
+- You cannot sell this tool or a changed version of it.
+- You must keep the license and this notice with each copy:
+
+Required Notice: Copyright (c) 2026 oceansaturn (https://github.com/oceansaturn/IrodoriUtauMaker)
+
+The license applies to this tool only. Irodori-TTS and its model have their own licenses.

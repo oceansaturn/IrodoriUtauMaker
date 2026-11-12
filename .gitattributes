@@ -1,2 +1,3 @@
 *.bat -text
 *.txt -text
+*.md -text
